@@ -17,7 +17,8 @@
     gameId: null,         // host only
     size: null,           // host only
     joined: false,        // joiner: true once welcome received
-    failed: false         // joiner: true once a fatal error was reported
+    failed: false,        // joiner: true once a fatal error was reported
+    joinTimer: null       // joiner: safety timeout id
   };
 
   function makeCode() {
@@ -25,6 +26,11 @@
     var s = "";
     for (var i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
     return s;
+  }
+
+  // A unique, valid PeerJS id for joiners (avoids the HTTP id endpoint entirely).
+  function makePeerId() {
+    return "bungo-p-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
   }
 
   function nextColor(players) {
@@ -36,8 +42,12 @@
   }
 
   function reject(conn, message) {
-    try { conn.send({ type: "error", message: message }); } catch (e) {}
-    setTimeout(function () { try { conn.close(); } catch (e) {} }, 400);
+    conn.on("open", function () {
+      try { conn.send({ type: "error", message: message }); } catch (e) {}
+      setTimeout(function () { try { conn.close(); } catch (e) {} }, 400);
+    });
+    // Safety net: if the channel never opens, close it anyway.
+    setTimeout(function () { try { conn.close(); } catch (e) {} }, 4000);
   }
 
   // Broadcast the current state to all peers and re-render the host's own UI.
@@ -88,6 +98,7 @@
       peer.on("connection", function (conn) { Net.onConnection(conn); });
 
       peer.on("error", function (err) {
+        if (window.console) console.error("[Bungo] host peer error:", err);
         if (err.type === "unavailable-id" && attempts < 5) {
           attempts += 1;
           try { peer.destroy(); } catch (e) {}
@@ -125,9 +136,18 @@
 
     conn.on("data", function (data) { Net.onData(playerId, data); });
     conn.on("close", function () { Net.onClientClose(playerId); });
-    conn.on("error", function () { Net.onClientClose(playerId); });
+    conn.on("error", function (err) {
+      // Transient errors (e.g. "not-open-yet") are not fatal; "close" handles cleanup.
+      if (window.console) console.warn("[Bungo] connection error:", err && err.type);
+    });
 
-    try { conn.send({ type: "welcome", youId: playerId, state: Net.state }); } catch (e) {}
+    // The data channel is NOT open yet when "connection" fires. Wait for "open"
+    // before sending the welcome message, otherwise PeerJS raises "not-open-yet".
+    conn.on("open", function () {
+      try { conn.send({ type: "welcome", youId: playerId, state: Net.state }); } catch (e) {}
+    });
+
+    // Reflect the new player in the host's UI immediately.
     Net.sync();
   };
 
@@ -193,7 +213,19 @@
     Net.failed = false;
     Net.youId = null;
 
-    var peer = new Peer({ debug: 1 });
+    // Safety timeout: never leave the user hanging with no feedback.
+    clearTimeout(Net.joinTimer);
+    Net.joinTimer = setTimeout(function () {
+      if (!Net.joined && !Net.failed) {
+        Net.failed = true;
+        cb.onError("Timed out joining. Check the code and that the host is still online.");
+        if (Net.peer) { try { Net.peer.destroy(); } catch (e) {} }
+      }
+    }, 15000);
+
+    // Use an explicit random id (like the host does) so joining never depends
+    // on the server's HTTP id endpoint, which some browsers/extensions block.
+    var peer = new Peer(makePeerId(), { debug: 1 });
     Net.peer = peer;
 
     peer.on("open", function () {
@@ -205,21 +237,26 @@
       });
       conn.on("data", function (data) { Net.handleServerMessage(data); });
       conn.on("close", function () {
-        if (Net.joined) cb.onRoomClosed();
-        else if (!Net.failed) { Net.failed = true; cb.onError("Could not connect to the room."); }
-      });
-      conn.on("error", function () {
-        if (!Net.failed) {
+        if (Net.joined) {
+          cb.onRoomClosed();
+        } else if (!Net.failed) {
           Net.failed = true;
-          cb.onError("Connection error.");
+          clearTimeout(Net.joinTimer);
+          cb.onError("Could not connect to the room.");
           try { peer.destroy(); } catch (e) {}
         }
+      });
+      conn.on("error", function (err) {
+        // A real failure also emits "close", which handles cleanup.
+        if (window.console) console.warn("[Bungo] connection error:", err && err.type);
       });
     });
 
     peer.on("error", function (err) {
       if (Net.failed) return;
       Net.failed = true;
+      clearTimeout(Net.joinTimer);
+      if (window.console) console.error("[Bungo] peer error:", err);
       if (err.type === "peer-unavailable") {
         cb.onError("Room not found. Check the code and try again.");
       } else {
@@ -236,12 +273,14 @@
   Net.handleServerMessage = function (data) {
     if (!data) return;
     if (data.type === "welcome") {
+      clearTimeout(Net.joinTimer);
       Net.joined = true;
       Net.youId = data.youId;
       if (Net.callbacks && Net.callbacks.onWelcome) Net.callbacks.onWelcome(data.state, data.youId);
     } else if (data.type === "state") {
       if (Net.callbacks && Net.callbacks.onState) Net.callbacks.onState(data.state);
     } else if (data.type === "error") {
+      clearTimeout(Net.joinTimer);
       Net.failed = true;
       if (Net.callbacks && Net.callbacks.onError) Net.callbacks.onError(data.message);
     }
@@ -266,6 +305,7 @@
   };
 
   Net.leave = function () {
+    clearTimeout(Net.joinTimer);
     if (Net.peer) { try { Net.peer.destroy(); } catch (e) {} }
     Net.peer = null;
     Net.conns.clear();

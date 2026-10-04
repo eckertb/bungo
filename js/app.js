@@ -27,6 +27,12 @@
     $("#btn-join").disabled = b;
   }
 
+  function resetButtons() {
+    setBusy(false);
+    $("#btn-create").textContent = "Create room";
+    $("#btn-join").textContent = "Join room";
+  }
+
   // ---------- Home screen ----------
   $("#btn-show-create").addEventListener("click", function () {
     $("#create-panel").classList.toggle("hidden");
@@ -48,6 +54,7 @@
       return;
     }
     setBusy(true);
+    $("#btn-create").textContent = "Creating…";
     BUNGO.Net.host(gameId, size, name, makeCallbacks(true));
   });
 
@@ -59,6 +66,7 @@
       return;
     }
     setBusy(true);
+    $("#btn-join").textContent = "Joining…";
     BUNGO.Net.join(code, name, makeCallbacks(false));
   });
 
@@ -80,7 +88,7 @@
   $("#btn-leave").addEventListener("click", function () {
     BUNGO.Net.leave();
     myPlayerId = null;
-    setBusy(false);
+    resetButtons();
     show(homeScreen);
   });
 
@@ -88,14 +96,14 @@
   function makeCallbacks(isHost) {
     return {
       onReady: function (info) {
-        setBusy(false);
+        resetButtons();
         myPlayerId = info.youId;
         $("#btn-new-round").classList.toggle("hidden", !isHost);
         show(roomScreen);
         render(info.state);
       },
       onWelcome: function (state, youId) {
-        setBusy(false);
+        resetButtons();
         myPlayerId = youId;
         $("#btn-new-round").classList.add("hidden");
         show(roomScreen);
@@ -105,11 +113,11 @@
         render(state);
       },
       onError: function (msg) {
-        setBusy(false);
+        resetButtons();
         showToast(msg, true);
       },
       onRoomClosed: function () {
-        setBusy(false);
+        resetButtons();
         showToast("The host closed the room.", true);
         BUNGO.Net.leave();
         myPlayerId = null;
