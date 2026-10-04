@@ -115,6 +115,20 @@
 
   $("#btn-add-player").addEventListener("click", addPlayer);
 
+  $("#btn-invite").addEventListener("click", function () {
+    $("#invite-modal").classList.remove("hidden");
+  });
+
+  function closeInviteModal() {
+    $("#invite-modal").classList.add("hidden");
+  }
+
+  $("#btn-close-invite").addEventListener("click", closeInviteModal);
+  $("#invite-backdrop").addEventListener("click", closeInviteModal);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeInviteModal();
+  });
+
   function addPlayer() {
     var list = $("#invites-list");
     var card = document.createElement("div");
@@ -266,6 +280,7 @@
     var count = BUNGO.Net.state ? BUNGO.Net.state.players.length : 0;
     $("#btn-add-player").disabled = count >= BUNGO.MAX_PLAYERS;
     $("#players-count").textContent = count + " / " + BUNGO.MAX_PLAYERS + " in room";
+    $("#btn-invite").textContent = "Invite players (" + count + "/" + BUNGO.MAX_PLAYERS + ")";
   }
 
   // ---------- Callbacks from the network layer ----------
@@ -274,8 +289,9 @@
       onReady: function (info) {
         myPlayerId = info.youId;
         $("#btn-new-round").classList.toggle("hidden", !isHost);
-        $("#invites-section").classList.toggle("hidden", !isHost);
-        $("#room-subtitle").textContent = "You are the host. Invite up to 8 players below.";
+        $("#btn-invite").classList.toggle("hidden", !isHost);
+        closeInviteModal();
+        $("#room-subtitle").textContent = "You are the host. Invite up to 8 players.";
         show(roomScreen);
         render(info.state);
       },
@@ -287,7 +303,7 @@
       onWelcome: function (state, youId) {
         myPlayerId = youId;
         $("#btn-new-round").classList.add("hidden");
-        $("#invites-section").classList.add("hidden");
+        $("#btn-invite").classList.add("hidden");
         $("#room-subtitle").textContent = "Connected to the host.";
         show(roomScreen);
         render(state);

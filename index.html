@@ -80,6 +80,7 @@
           <p id="room-subtitle" class="hint"></p>
         </div>
         <div class="room-actions">
+          <button id="btn-invite" class="btn btn-secondary hidden">Invite players</button>
           <button id="btn-new-round" class="btn btn-secondary hidden">New round</button>
           <button id="btn-leave" class="btn btn-danger">Leave</button>
         </div>
@@ -92,15 +93,19 @@
         <div id="board" class="board"></div>
       </div>
 
-      <section id="invites-section" class="invites-section hidden">
-        <div class="invites-head">
-          <h3>Invite players</h3>
-          <span id="players-count" class="players-count">1 / 9 in room</span>
+      <div id="invite-modal" class="modal hidden">
+        <div id="invite-backdrop" class="modal-backdrop"></div>
+        <div class="modal-dialog">
+          <div class="modal-head">
+            <h3>Invite players</h3>
+            <span id="players-count" class="players-count">1 / 9 in room</span>
+            <button id="btn-close-invite" class="btn btn-ghost modal-close" title="Close">✕</button>
+          </div>
+          <p class="hint">Each player needs their own invite: copy it, send it to them, then paste their answer back here.</p>
+          <div id="invites-list"></div>
+          <button id="btn-add-player" class="btn btn-secondary">＋ Add player</button>
         </div>
-        <p class="hint">Each player needs their own invite: copy it, send it to them, then paste their answer back here.</p>
-        <div id="invites-list"></div>
-        <button id="btn-add-player" class="btn btn-secondary">＋ Add player</button>
-      </section>
+      </div>
 
       <p class="help">Click a task to place (or remove) your token. Get a full row, column, or diagonal to win — the center FREE counts for everyone.</p>
     </section>
