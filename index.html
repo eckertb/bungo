@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bungo</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ============ HOME ============ -->
+    <section id="home-screen" class="screen">
+      <header class="hero">
+        <h1>Bungo</h1>
+        <p>Play bingo while you game. Create a room, share the code, and race your friends to a line — peer to peer.</p>
+      </header>
+
+      <div class="home-actions">
+        <button id="btn-show-create" class="btn btn-primary">Create Room</button>
+        <button id="btn-show-join" class="btn btn-secondary">Join Room</button>
+      </div>
+
+      <div id="create-panel" class="panel hidden">
+        <h2>Create a room</h2>
+        <label class="field">
+          <span>Your name</span>
+          <input id="host-name" type="text" maxlength="16" placeholder="Host" />
+        </label>
+        <label class="field">
+          <span>Video game</span>
+          <select id="game-select"></select>
+        </label>
+        <label class="field">
+          <span>Bingo card size</span>
+          <select id="size-select">
+            <option value="3">3 × 3</option>
+            <option value="5" selected>5 × 5</option>
+            <option value="7">7 × 7</option>
+          </select>
+        </label>
+        <button id="btn-create" class="btn btn-primary btn-block">Create room</button>
+      </div>
+
+      <div id="join-panel" class="panel hidden">
+        <h2>Join a room</h2>
+        <label class="field">
+          <span>Your name</span>
+          <input id="join-name" type="text" maxlength="16" placeholder="Player" />
+        </label>
+        <label class="field">
+          <span>Room code</span>
+          <input id="join-code" type="text" maxlength="4" placeholder="ABCD" spellcheck="false"
+                 autocomplete="off" autocapitalize="characters" />
+        </label>
+        <button id="btn-join" class="btn btn-primary btn-block">Join room</button>
+      </div>
+    </section>
+
+    <!-- ============ ROOM ============ -->
+    <section id="room-screen" class="screen hidden">
+      <header class="room-header">
+        <div class="room-title">
+          <h2 id="room-game-name">Game</h2>
+          <div class="room-code-row">
+            <span class="room-code-label">Room code</span>
+            <span id="room-code" class="room-code">----</span>
+            <button id="btn-copy-code" class="btn btn-ghost">Copy</button>
+          </div>
+        </div>
+        <div class="room-actions">
+          <button id="btn-new-round" class="btn btn-secondary hidden">New round</button>
+          <button id="btn-leave" class="btn btn-danger">Leave</button>
+        </div>
+      </header>
+
+      <div id="players-bar" class="players-bar"></div>
+      <div id="status-bar" class="status-bar"></div>
+
+      <div id="board-scroll">
+        <div id="board" class="board"></div>
+      </div>
+
+      <p class="help">Click a task to place (or remove) your token. Get a full row, column, or diagonal to win — the center FREE counts for everyone.</p>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/game-data.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/network.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
