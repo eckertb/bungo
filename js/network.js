@@ -86,12 +86,15 @@
   function parseData(data) {
     try { return JSON.parse(data); } catch (e) { return null; }
   }
-  function nextColor(players) {
+  // Picks a random color that no current player is using.
+  function randomColor(players) {
     var used = players.map(function (p) { return p.color.hex; });
+    var available = [];
     for (var i = 0; i < COLORS.length; i++) {
-      if (used.indexOf(COLORS[i].hex) < 0) return COLORS[i];
+      if (used.indexOf(COLORS[i].hex) < 0) available.push(COLORS[i]);
     }
-    return null;
+    if (available.length === 0) return null;
+    return available[Math.floor(Math.random() * available.length)];
   }
   function waitIceComplete(pc) {
     return new Promise(function (resolve) {
@@ -120,6 +123,7 @@
     Net.gameId = gameId;
     Net.size = size;
     var hostId = "host";
+    var hostColor = randomColor([]);
     Net.youId = hostId;
     Net.state = {
       gameId: gameId,
@@ -127,7 +131,7 @@
       size: size,
       board: BUNGO.generateBoard(BUNGO.getTasks(gameId), size),
       marks: {},
-      players: [{ id: hostId, name: (name || "Host").slice(0, 16), color: COLORS[0], isHost: true, connected: true }],
+      players: [{ id: hostId, name: (name || "Host").slice(0, 16), color: hostColor, isHost: true, connected: true }],
       winner: null,
       round: 1
     };
@@ -185,7 +189,7 @@
 
   Net.onChannelOpen = function (invite) {
     if (invite.resolved) return;
-    var color = nextColor(Net.state.players);
+    var color = randomColor(Net.state.players);
     if (Net.state.players.length >= MAX_PLAYERS || !color) {
       send(invite.channel, { type: "error", message: "Room is full (8 players max)." });
       setTimeout(function () { try { invite.channel.close(); } catch (e) {} }, 500);

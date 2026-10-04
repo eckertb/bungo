@@ -82,8 +82,15 @@ body {
 }
 
 /* ---------- Room header ---------- */
-.room-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
-.room-title h2 { margin: 0 0 8px; }
+#room-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 88px);
+  min-height: calc(100dvh - 88px);
+}
+
+.room-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.room-title h2 { margin: 0; }
 .room-code-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .room-code-label { color: var(--muted); font-size: 0.85rem; }
 .room-code {
@@ -94,7 +101,7 @@ body {
 .room-actions { display: flex; gap: 10px; }
 
 /* ---------- Players ---------- */
-.players-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0 4px; }
+.players-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 26px 0 0; }
 .player-chip {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--panel); border: 1px solid var(--border);
@@ -103,7 +110,7 @@ body {
 .player-chip .dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }
 
 /* ---------- Status ---------- */
-.status-bar { text-align: center; color: var(--muted); margin: 10px 0; min-height: 28px; }
+.status-bar { text-align: center; color: var(--muted); margin: 10px 0 0; min-height: 0; }
 .winner-banner {
   display: inline-block; font-size: 1.5rem; font-weight: 800; padding: 8px 24px;
   border: 2px solid; border-radius: 999px; background: rgba(0, 0, 0, 0.35);
@@ -112,13 +119,17 @@ body {
 @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.04); } }
 
 /* ---------- Board ---------- */
-#board-scroll { overflow-x: auto; }
+#board-scroll { overflow-x: auto; margin-top: auto; margin-bottom: auto; }
+
+/* With a winner, float the banner halfway between the header and the board. */
+#room-screen.has-winner .status-bar { margin-top: auto; margin-bottom: auto; }
+#room-screen.has-winner #board-scroll { margin-top: 0; }
 .board {
   display: grid;
   grid-template-columns: repeat(var(--size), minmax(64px, 1fr));
   gap: 8px;
   max-width: min(920px, calc(var(--size) * 150px));
-  margin: 20px auto 0;
+  margin: 0 auto;
 }
 
 .cell {

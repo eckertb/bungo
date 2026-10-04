@@ -4,7 +4,7 @@ window.BUNGO = window.BUNGO || {};
 // 1 host + up to 8 players who join.
 BUNGO.MAX_PLAYERS = 9;
 
-// Unique color tokens, one per player. The host always gets index 0.
+// Unique color tokens, one per player. Each player gets a random unused color.
 BUNGO.COLORS = [
   { name: "Red",     hex: "#e63946" },
   { name: "Orange",  hex: "#f4a261" },

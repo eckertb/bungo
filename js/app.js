@@ -47,13 +47,6 @@
     }
   }
 
-  function readClipboard() {
-    if (navigator.clipboard && navigator.clipboard.readText) {
-      return navigator.clipboard.readText().catch(function () { return null; });
-    }
-    return Promise.resolve(null);
-  }
-
   // ---------- Home screen ----------
   $("#btn-show-create").addEventListener("click", function () {
     $("#create-panel").classList.toggle("hidden");
@@ -148,7 +141,6 @@
       '<div class="invite-label">Answer — paste their reply here</div>' +
       '<textarea class="blob answer-box" rows="3" placeholder="Paste their answer…"></textarea>' +
       '<div class="invite-actions">' +
-        '<button class="btn btn-ghost paste-answer">Paste</button>' +
         '<button class="btn btn-primary connect-btn">Connect</button>' +
       '</div>' +
       '<div class="invite-status"></div>';
@@ -160,7 +152,6 @@
     var statusEl = card.querySelector(".invite-status");
     var badgeEl = card.querySelector(".invite-head .invite-badge");
     var copyBtn = card.querySelector(".copy-invite");
-    var pasteBtn = card.querySelector(".paste-answer");
     var connectBtn = card.querySelector(".connect-btn");
     var removeBtn = card.querySelector(".remove-invite");
 
@@ -181,18 +172,6 @@
       copyText(inviteBox.value, "Invite copied. Send it to a player.");
       copyBtn.textContent = "Copied ✓";
       setTimeout(function () { copyBtn.textContent = "Copy invite"; }, 2000);
-    });
-
-    pasteBtn.addEventListener("click", function () {
-      readClipboard().then(function (text) {
-        text = (text || "").trim();
-        if (text) {
-          answerBox.value = text;
-          setStatus("Pasted. Press Connect when ready.");
-        } else {
-          setStatus("Nothing to paste — paste it into the box manually.", "err");
-        }
-      });
     });
 
     function doConnect(answer) {
@@ -282,7 +261,6 @@
         $("#btn-new-round").classList.toggle("hidden", !isHost);
         $("#btn-invite").classList.toggle("hidden", !isHost);
         closeInviteModal();
-        $("#room-subtitle").textContent = "You are the host. Invite up to 8 players.";
         show(roomScreen);
         render(info.state);
       },
@@ -295,7 +273,6 @@
         myPlayerId = youId;
         $("#btn-new-round").classList.add("hidden");
         $("#btn-invite").classList.add("hidden");
-        $("#room-subtitle").textContent = "Connected to the host.";
         show(roomScreen);
         render(state);
       },
@@ -326,6 +303,7 @@
   // ---------- Rendering ----------
   function render(state) {
     $("#room-game-name").textContent = state.gameName;
+    roomScreen.classList.toggle("has-winner", !!state.winner);
     renderPlayers(state.players);
     renderStatus(state.winner);
     renderBoard(state);
@@ -345,9 +323,7 @@
       chip.appendChild(dot);
 
       var label = document.createElement("span");
-      label.textContent = p.name +
-        (p.isHost ? " · host" : "") +
-        (p.id === myPlayerId ? " · you" : "");
+      label.textContent = p.name;
       chip.appendChild(label);
 
       el.appendChild(chip);
@@ -366,8 +342,6 @@
         b.style.borderColor = winner.color.hex;
       }
       el.appendChild(b);
-    } else {
-      el.textContent = "First to a complete line wins!";
     }
   }
 

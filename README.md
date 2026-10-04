@@ -2,8 +2,8 @@
 
 A serverless, dependency-free bingo game to play alongside a video game.
 Players complete tasks in the game, mark them on a shared bingo card, and race
-to a full line. There is **no server and no third-party library** — connections
-are made with the browser's native WebRTC APIs.
+to a full line. There is **no server and no third-party library** — players
+connect with the browser's native WebRTC APIs.
 
 ## Run it
 
@@ -11,16 +11,32 @@ Open `index.html` in a browser (double-click it). No build step, no backend.
 
 ## How to play
 
-1. **Create a room** — pick a video game and a bingo card size (3×3, 5×5, or 7×7).
-2. As host, click **＋ Add player** to generate a **join invite**. Copy it and
-   send it to a friend (any chat, email, or SMS works).
-3. The friend pastes the invite on the **Join room** screen, which produces an
-   **answer** for them to copy and send back to you.
-4. Paste their answer into that invite and click **Connect**. They appear in
-   the room instantly. Repeat for up to 8 players.
-5. Everyone shares the same card with a FREE center. Each player has a unique
-   color; click a task to mark it (the cell's background turns that color). The
-   first to a full row, column, or diagonal wins.
+### Host
+
+1. **Create a room** — pick a video game (Super Mario 64 or Dark Souls) and a
+   bingo card size (3×3, 5×5, or 7×7).
+2. Click **Invite players** in the top-right to open the invite modal, then
+   click **＋ Add player** to create an invite.
+3. Copy the **invite** code and send it to a friend (any chat, email, or SMS
+   works).
+4. When they reply with an **answer** code, paste it into that invite's answer
+   box and click **Connect**. They join instantly. Repeat for up to 8 players.
+
+### Joiner
+
+1. Click **Join room**, paste the **invite** the host sent you, and enter your
+   name.
+2. The app produces an **answer** code — copy it and send it back to the host.
+3. The room opens automatically once the host connects you.
+
+### Playing
+
+- Everyone shares the same card, with a FREE space in the middle.
+- Each player gets a **random unique color**. Click a task to mark it — the
+  cell's background turns your color (when several players mark the same cell,
+  it splits into colored segments).
+- The first player to complete a full row, column, or diagonal wins (the FREE
+  center counts for everyone).
 
 > The invite/answer strings are SDP blobs that only describe how to reach the
 > host. They carry no game data and are useless once the room ends.
@@ -51,7 +67,8 @@ data/games/*.json       # tasks per video game
 
 ## Adding a game
 
-1. Add `data/games/<id>.json` with `{ "id", "name", "tasks": [...] }`.
+1. Add `data/games/<id>.json` with `{ "id", "name", "tasks": [...] }` (a 7×7
+   board needs at least 48 tasks).
 2. Add the id to `BUNGO.GAME_IDS` in `js/game-data.js`.
 3. If you open the app via `file://`, also mirror the data into
    `BUNGO.GAMES_FALLBACK` in the same file (served over HTTP it fetches the JSON).
