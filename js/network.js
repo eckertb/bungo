@@ -1,154 +1,210 @@
-// Peer-to-peer networking on top of PeerJS (WebRTC data channels).
-// The room host is the authority: it holds the single source of truth for the
-// game state and broadcasts it to every connected player.
+// Serverless, dependency-free peer-to-peer networking using the browser's
+// native WebRTC APIs. There is no signaling server and no library: the host
+// and each player exchange a "join invite" and an "answer" (SDP blobs) out of
+// band via copy/paste. Once connected, game data flows over an RTCDataChannel.
 (function () {
-  var ROOM_PREFIX = BUNGO.ROOM_PREFIX;
   var COLORS = BUNGO.COLORS;
   var MAX_PLAYERS = BUNGO.MAX_PLAYERS;
 
+  // Public STUN servers (configuration only — not a library). They help peers
+  // behind NAT punch through; they never see application data. No TURN server
+  // is used, so a small number of very restrictive NATs may not connect.
+  var ICE_SERVERS = [
+    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
+  ];
+
   var Net = {
-    peer: null,
     isHost: false,
-    hostConn: null,       // joiners only: connection to the host
-    conns: new Map(),     // host only: playerId -> connection
+    state: null,        // host only
+    gameId: null,       // host only
+    size: null,         // host only
+    conns: new Map(),   // host only: playerId -> RTCDataChannel
+    invites: new Map(), // host only: inviteId -> { id, pc, channel, playerId, resolved }
     youId: null,
     callbacks: null,
-    state: null,          // host only
-    gameId: null,         // host only
-    size: null,           // host only
-    joined: false,        // joiner: true once welcome received
-    failed: false,        // joiner: true once a fatal error was reported
-    joinTimer: null       // joiner: safety timeout id
+    joined: false,      // joiner
+    failed: false,      // joiner
+    pc: null,           // joiner
+    channel: null       // joiner
   };
 
-  function makeCode() {
-    var chars = BUNGO.CODE_CHARS;
-    var s = "";
-    for (var i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
-    return s;
-  }
+  var inviteCounter = 0;
+  function nextInviteId() { inviteCounter += 1; return "inv" + inviteCounter; }
+  function makePlayerId() { return "p" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10); }
 
-  // A unique, valid PeerJS id for joiners (avoids the HTTP id endpoint entirely).
-  function makePeerId() {
-    return "bungo-p-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  // ---------------- SDP encoding (compact + compressed) ----------------
+  function b64encode(bytes) {
+    var bin = "";
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
   }
-
-  function nextColor(players) {
-    var used = players.map(function (p) { return p.color.hex; });
-    for (var i = 0; i < COLORS.length; i++) {
-      if (used.indexOf(COLORS[i].hex) < 0) return COLORS[i];
+  function b64decode(b64) {
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function encodeSession(desc) {
+    var json = JSON.stringify({ t: desc.type, s: desc.sdp });
+    if (typeof CompressionStream === "function") {
+      try {
+        var cs = new CompressionStream("deflate-raw");
+        var blob = new Blob([json]).stream().pipeThrough(cs);
+        return new Response(blob).arrayBuffer().then(function (buf) {
+          return "c." + b64encode(new Uint8Array(buf));
+        });
+      } catch (e) { /* fall back to plain JSON below */ }
     }
-    return null;
+    return Promise.resolve("j." + json);
+  }
+  function decodeSession(str) {
+    str = (str || "").trim();
+    if (!str) return Promise.reject(new Error("empty invite/answer"));
+    if (str.slice(0, 2) === "c.") {
+      var bytes = b64decode(str.slice(2));
+      var ds = new DecompressionStream("deflate-raw");
+      var out = new Blob([bytes]).stream().pipeThrough(ds);
+      return new Response(out).text().then(function (json) {
+        var obj = JSON.parse(json);
+        return { type: obj.t, sdp: obj.s };
+      });
+    }
+    if (str.slice(0, 2) === "j.") {
+      var obj2 = JSON.parse(str.slice(2));
+      return Promise.resolve({ type: obj2.t, sdp: obj2.s });
+    }
+    // Bare SDP fallback (assume it's an offer).
+    return Promise.resolve({ type: "offer", sdp: str });
   }
 
-  function reject(conn, message) {
-    conn.on("open", function () {
-      try { conn.send({ type: "error", message: message }); } catch (e) {}
-      setTimeout(function () { try { conn.close(); } catch (e) {} }, 400);
+  // ---------------- Small helpers ----------------
+  function send(channel, msg) {
+    if (channel && channel.readyState === "open") {
+      try { channel.send(JSON.stringify(msg)); } catch (e) {}
+    }
+  }
+  function parseData(data) {
+    try { return JSON.parse(data); } catch (e) { return null; }
+  }
+  // Picks a random color that no current player is using.
+  function randomColor(players) {
+    var used = players.map(function (p) { return p.color.hex; });
+    var available = [];
+    for (var i = 0; i < COLORS.length; i++) {
+      if (used.indexOf(COLORS[i].hex) < 0) available.push(COLORS[i]);
+    }
+    if (available.length === 0) return null;
+    return available[Math.floor(Math.random() * available.length)];
+  }
+  function waitIceComplete(pc) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish() { if (!done) { done = true; resolve(); } }
+      if (pc.iceGatheringState === "complete") { finish(); return; }
+      pc.onicecandidate = function (ev) { if (!ev.candidate) finish(); };
+      pc.onicegatheringstatechange = function () {
+        if (pc.iceGatheringState === "complete") finish();
+      };
+      setTimeout(finish, 10000); // never hang forever on odd networks
     });
-    // Safety net: if the channel never opens, close it anyway.
-    setTimeout(function () { try { conn.close(); } catch (e) {} }, 4000);
   }
 
-  // Broadcast the current state to all peers and re-render the host's own UI.
+  // ---------------- State sync ----------------
   Net.sync = function () {
     var msg = { type: "state", state: Net.state };
-    Net.conns.forEach(function (conn) {
-      if (conn.open) { try { conn.send(msg); } catch (e) {} }
-    });
+    Net.conns.forEach(function (ch) { send(ch, msg); });
     if (Net.callbacks && Net.callbacks.onState) Net.callbacks.onState(Net.state);
   };
 
   // ---------------- Host ----------------
   Net.host = function (gameId, size, name, cb) {
-    if (typeof Peer === "undefined") {
-      cb.onError("Networking library failed to load. Check your internet connection.");
-      return;
-    }
     Net.callbacks = cb;
     Net.isHost = true;
     Net.gameId = gameId;
     Net.size = size;
-    var attempts = 0;
-
-    function tryCreate() {
-      var code = makeCode();
-      var peer = new Peer(ROOM_PREFIX + code, { debug: 1 });
-      Net.peer = peer;
-
-      peer.on("open", function () {
-        var board = BUNGO.generateBoard(BUNGO.getTasks(gameId), size);
-        var hostColor = COLORS[0];
-        var hostId = peer.id;
-        Net.youId = hostId;
-        Net.state = {
-          code: code,
-          gameId: gameId,
-          gameName: BUNGO.getGameName(gameId),
-          size: size,
-          board: board,
-          marks: {},
-          players: [{ id: hostId, name: (name || "Host").slice(0, 16), color: hostColor, isHost: true, connected: true }],
-          winner: null,
-          round: 1
-        };
-        cb.onReady({ code: code, youId: hostId, state: Net.state, isHost: true });
-      });
-
-      peer.on("connection", function (conn) { Net.onConnection(conn); });
-
-      peer.on("error", function (err) {
-        if (window.console) console.error("[Bungo] host peer error:", err);
-        if (err.type === "unavailable-id" && attempts < 5) {
-          attempts += 1;
-          try { peer.destroy(); } catch (e) {}
-          tryCreate();
-        } else if (err.type === "unavailable-id") {
-          cb.onError("Could not reserve a room code. Please try again.");
-        } else if (err.type !== "peer-unavailable") {
-          cb.onError("Network error: " + (err.type || err.message || "unknown"));
-        }
-      });
-
-      peer.on("disconnected", function () {
-        if (!peer.destroyed) { try { peer.reconnect(); } catch (e) {} }
-      });
-    }
-
-    tryCreate();
+    var hostId = "host";
+    var hostColor = randomColor([]);
+    Net.youId = hostId;
+    Net.state = {
+      gameId: gameId,
+      gameName: BUNGO.getGameName(gameId),
+      size: size,
+      board: BUNGO.generateBoard(BUNGO.getTasks(gameId), size),
+      marks: {},
+      players: [{ id: hostId, name: (name || "Host").slice(0, 16), color: hostColor, isHost: true, connected: true }],
+      winner: null,
+      round: 1
+    };
+    cb.onReady({ youId: hostId, state: Net.state, isHost: true });
   };
 
-  Net.onConnection = function (conn) {
-    if (Net.state.players.length >= MAX_PLAYERS) {
-      reject(conn, "Room is full (8 players max).");
-      return;
-    }
-    var color = nextColor(Net.state.players);
-    if (!color) {
-      reject(conn, "Room is full (8 players max).");
-      return;
-    }
+  // Creates a pending connection and returns { id, invite }.
+  Net.createInvite = function () {
+    return new Promise(function (resolve, reject) {
+      if (Net.state.players.length >= MAX_PLAYERS) {
+        reject(new Error("Room is full (8 players max)."));
+        return;
+      }
+      var pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      var channel = pc.createDataChannel("bungo", { ordered: true });
+      var invite = { id: nextInviteId(), pc: pc, channel: channel, playerId: null, resolved: false };
+      Net.invites.set(invite.id, invite);
 
-    var playerId = conn.peer;
+      channel.onopen = function () { Net.onChannelOpen(invite); };
+      channel.onclose = function () {
+        if (invite.playerId) Net.onClientClose(invite.playerId);
+        Net.invites.delete(invite.id);
+      };
+      channel.onmessage = function (ev) {
+        var data = parseData(ev.data);
+        if (invite.playerId) Net.onData(invite.playerId, data);
+      };
+
+      pc.createOffer()
+        .then(function (offer) { return pc.setLocalDescription(offer); })
+        .then(function () { return waitIceComplete(pc); })
+        .then(function () { return encodeSession(pc.localDescription); })
+        .then(function (str) { resolve({ id: invite.id, invite: str }); })
+        .catch(function (e) { Net.invites.delete(invite.id); reject(e); });
+    });
+  };
+
+  // Accepts the answer the joiner pasted back; the channel opens on both sides.
+  Net.acceptAnswer = function (inviteId, answerStr) {
+    var invite = Net.invites.get(inviteId);
+    if (!invite) return Promise.reject(new Error("That invite no longer exists."));
+    return decodeSession(answerStr).then(function (desc) {
+      return invite.pc.setRemoteDescription(desc);
+    });
+  };
+
+  Net.discardInvite = function (inviteId) {
+    var inv = Net.invites.get(inviteId);
+    if (!inv) return;
+    Net.invites.delete(inviteId);
+    try { inv.channel.close(); } catch (e) {}
+    try { inv.pc.close(); } catch (e) {}
+    if (inv.playerId) Net.onClientClose(inv.playerId);
+  };
+
+  Net.onChannelOpen = function (invite) {
+    if (invite.resolved) return;
+    var color = randomColor(Net.state.players);
+    if (Net.state.players.length >= MAX_PLAYERS || !color) {
+      send(invite.channel, { type: "error", message: "Room is full (8 players max)." });
+      setTimeout(function () { try { invite.channel.close(); } catch (e) {} }, 500);
+      return;
+    }
+    invite.resolved = true;
+    var playerId = makePlayerId();
+    invite.playerId = playerId;
     var player = { id: playerId, name: "Player", color: color, isHost: false, connected: true };
     Net.state.players.push(player);
-    Net.conns.set(playerId, conn);
+    Net.conns.set(playerId, invite.channel);
 
-    conn.on("data", function (data) { Net.onData(playerId, data); });
-    conn.on("close", function () { Net.onClientClose(playerId); });
-    conn.on("error", function (err) {
-      // Transient errors (e.g. "not-open-yet") are not fatal; "close" handles cleanup.
-      if (window.console) console.warn("[Bungo] connection error:", err && err.type);
-    });
-
-    // The data channel is NOT open yet when "connection" fires. Wait for "open"
-    // before sending the welcome message, otherwise PeerJS raises "not-open-yet".
-    conn.on("open", function () {
-      try { conn.send({ type: "welcome", youId: playerId, state: Net.state }); } catch (e) {}
-    });
-
-    // Reflect the new player in the host's UI immediately.
+    send(invite.channel, { type: "welcome", youId: playerId, state: Net.state });
     Net.sync();
+    if (Net.callbacks && Net.callbacks.onInviteConnected) Net.callbacks.onInviteConnected(invite.id, player);
   };
 
   Net.onData = function (playerId, data) {
@@ -202,85 +258,53 @@
   };
 
   // ---------------- Joiner ----------------
-  Net.join = function (code, name, cb) {
-    if (typeof Peer === "undefined") {
-      cb.onError("Networking library failed to load. Check your internet connection.");
-      return;
-    }
+  Net.join = function (inviteStr, name, cb) {
     Net.callbacks = cb;
     Net.isHost = false;
     Net.joined = false;
     Net.failed = false;
     Net.youId = null;
 
-    // Safety timeout: never leave the user hanging with no feedback.
-    clearTimeout(Net.joinTimer);
-    Net.joinTimer = setTimeout(function () {
-      if (!Net.joined && !Net.failed) {
-        Net.failed = true;
-        cb.onError("Timed out joining. Check the code and that the host is still online.");
-        if (Net.peer) { try { Net.peer.destroy(); } catch (e) {} }
-      }
-    }, 15000);
+    var pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    Net.pc = pc;
 
-    // Use an explicit random id (like the host does) so joining never depends
-    // on the server's HTTP id endpoint, which some browsers/extensions block.
-    var peer = new Peer(makePeerId(), { debug: 1 });
-    Net.peer = peer;
+    pc.ondatachannel = function (ev) {
+      var channel = ev.channel;
+      Net.channel = channel;
+      channel.onopen = function () {
+        send(channel, { type: "hello", name: (name || "Player").slice(0, 16) });
+      };
+      channel.onmessage = function (ev) { Net.handleServerMessage(parseData(ev.data)); };
+      channel.onclose = function () {
+        if (Net.joined) cb.onRoomClosed();
+        else if (!Net.failed) { Net.failed = true; cb.onError("The connection closed before joining."); }
+      };
+    };
 
-    peer.on("open", function () {
-      var conn = peer.connect(ROOM_PREFIX + code.toUpperCase(), { reliable: true, serialization: "json" });
-      Net.hostConn = conn;
-
-      conn.on("open", function () {
-        try { conn.send({ type: "hello", name: (name || "Player").slice(0, 16) }); } catch (e) {}
-      });
-      conn.on("data", function (data) { Net.handleServerMessage(data); });
-      conn.on("close", function () {
-        if (Net.joined) {
-          cb.onRoomClosed();
-        } else if (!Net.failed) {
+    decodeSession(inviteStr)
+      .then(function (desc) { return pc.setRemoteDescription(desc); })
+      .then(function () { return pc.createAnswer(); })
+      .then(function (answer) { return pc.setLocalDescription(answer); })
+      .then(function () { return waitIceComplete(pc); })
+      .then(function () { return encodeSession(pc.localDescription); })
+      .then(function (answerStr) { cb.onAnswerReady(answerStr); })
+      .catch(function (e) {
+        if (!Net.failed) {
           Net.failed = true;
-          clearTimeout(Net.joinTimer);
-          cb.onError("Could not connect to the room.");
-          try { peer.destroy(); } catch (e) {}
+          cb.onError("Could not process the invite: " + (e && e.message ? e.message : e));
         }
       });
-      conn.on("error", function (err) {
-        // A real failure also emits "close", which handles cleanup.
-        if (window.console) console.warn("[Bungo] connection error:", err && err.type);
-      });
-    });
-
-    peer.on("error", function (err) {
-      if (Net.failed) return;
-      Net.failed = true;
-      clearTimeout(Net.joinTimer);
-      if (window.console) console.error("[Bungo] peer error:", err);
-      if (err.type === "peer-unavailable") {
-        cb.onError("Room not found. Check the code and try again.");
-      } else {
-        cb.onError("Network error: " + (err.type || err.message || "unknown"));
-      }
-      try { peer.destroy(); } catch (e) {}
-    });
-
-    peer.on("disconnected", function () {
-      if (!peer.destroyed) { try { peer.reconnect(); } catch (e) {} }
-    });
   };
 
   Net.handleServerMessage = function (data) {
     if (!data) return;
     if (data.type === "welcome") {
-      clearTimeout(Net.joinTimer);
       Net.joined = true;
       Net.youId = data.youId;
       if (Net.callbacks && Net.callbacks.onWelcome) Net.callbacks.onWelcome(data.state, data.youId);
     } else if (data.type === "state") {
       if (Net.callbacks && Net.callbacks.onState) Net.callbacks.onState(data.state);
     } else if (data.type === "error") {
-      clearTimeout(Net.joinTimer);
       Net.failed = true;
       if (Net.callbacks && Net.callbacks.onError) Net.callbacks.onError(data.message);
     }
@@ -290,8 +314,8 @@
   Net.mark = function (cellIndex) {
     if (Net.isHost) {
       Net.toggleMark(Net.youId, cellIndex);
-    } else if (Net.hostConn && Net.hostConn.open) {
-      try { Net.hostConn.send({ type: "mark", cellIndex: cellIndex }); } catch (e) {}
+    } else if (Net.channel && Net.channel.readyState === "open") {
+      send(Net.channel, { type: "mark", cellIndex: cellIndex });
     }
   };
 
@@ -305,11 +329,13 @@
   };
 
   Net.leave = function () {
-    clearTimeout(Net.joinTimer);
-    if (Net.peer) { try { Net.peer.destroy(); } catch (e) {} }
-    Net.peer = null;
+    Net.conns.forEach(function (ch) { try { ch.close(); } catch (e) {} });
     Net.conns.clear();
-    Net.hostConn = null;
+    Net.invites.forEach(function (inv) { try { inv.pc.close(); } catch (e) {} });
+    Net.invites.clear();
+    if (Net.pc) { try { Net.pc.close(); } catch (e) {} }
+    Net.pc = null;
+    Net.channel = null;
     Net.state = null;
     Net.isHost = false;
     Net.youId = null;

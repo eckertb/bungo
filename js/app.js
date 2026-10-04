@@ -3,12 +3,15 @@
   var $ = function (sel) { return document.querySelector(sel); };
 
   var myPlayerId = null;
+  var inviteCards = {};
 
   var homeScreen = $("#home-screen");
+  var answerScreen = $("#answer-screen");
   var roomScreen = $("#room-screen");
 
   function show(screen) {
     homeScreen.classList.add("hidden");
+    answerScreen.classList.add("hidden");
     roomScreen.classList.add("hidden");
     screen.classList.remove("hidden");
   }
@@ -19,7 +22,7 @@
     t.classList.toggle("error", !!isError);
     t.classList.remove("hidden");
     clearTimeout(showToast._t);
-    showToast._t = setTimeout(function () { t.classList.add("hidden"); }, 4000);
+    showToast._t = setTimeout(function () { t.classList.add("hidden"); }, 5000);
   }
 
   function setBusy(b) {
@@ -31,6 +34,17 @@
     setBusy(false);
     $("#btn-create").textContent = "Create room";
     $("#btn-join").textContent = "Join room";
+  }
+
+  function copyText(text, okMsg) {
+    function fallback() { showToast(okMsg || "Copied."); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(function () { showToast(okMsg || "Copied."); })
+        .catch(fallback);
+    } else {
+      fallback();
+    }
   }
 
   // ---------- Home screen ----------
@@ -53,37 +67,37 @@
       showToast("This game doesn't have enough tasks for a " + size + "×" + size + " board.", true);
       return;
     }
-    setBusy(true);
-    $("#btn-create").textContent = "Creating…";
     BUNGO.Net.host(gameId, size, name, makeCallbacks(true));
   });
 
   $("#btn-join").addEventListener("click", function () {
-    var code = $("#join-code").value.trim().toUpperCase();
+    var invite = $("#join-invite").value.trim();
     var name = $("#join-name").value.trim() || "Player";
-    if (!/^[A-Z0-9]{4}$/.test(code)) {
-      showToast("Room codes are 4 letters or numbers.", true);
+    if (!invite) {
+      showToast("Paste the invite the host sent you.", true);
       return;
     }
-    setBusy(true);
-    $("#btn-join").textContent = "Joining…";
-    BUNGO.Net.join(code, name, makeCallbacks(false));
+    show(answerScreen);
+    $("#answer-box").value = "";
+    $("#btn-copy-answer").disabled = true;
+    $("#answer-status").textContent = "Preparing your answer…";
+    $("#answer-status").className = "invite-status";
+    BUNGO.Net.join(invite, name, makeCallbacks(false));
   });
 
-  $("#btn-copy-code").addEventListener("click", function () {
-    var code = $("#room-code").textContent;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(code)
-        .then(function () { showToast("Code copied: " + code); })
-        .catch(function () { showToast("Code: " + code); });
-    } else {
-      showToast("Code: " + code);
-    }
+  $("#btn-copy-answer").addEventListener("click", function () {
+    var v = $("#answer-box").value;
+    if (v) copyText(v, "Answer copied. Send it back to the host.");
   });
 
-  $("#btn-new-round").addEventListener("click", function () {
-    BUNGO.Net.newRound();
+  $("#btn-answer-back").addEventListener("click", function () {
+    BUNGO.Net.leave();
+    myPlayerId = null;
+    show(homeScreen);
   });
+
+  // ---------- Room screen ----------
+  $("#btn-new-round").addEventListener("click", function () { BUNGO.Net.newRound(); });
 
   $("#btn-leave").addEventListener("click", function () {
     BUNGO.Net.leave();
@@ -92,32 +106,192 @@
     show(homeScreen);
   });
 
+  $("#btn-add-player").addEventListener("click", addPlayer);
+
+  $("#btn-invite").addEventListener("click", function () {
+    $("#invite-modal").classList.remove("hidden");
+  });
+
+  function closeInviteModal() {
+    $("#invite-modal").classList.add("hidden");
+  }
+
+  $("#btn-close-invite").addEventListener("click", closeInviteModal);
+  $("#invite-backdrop").addEventListener("click", closeInviteModal);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeInviteModal();
+  });
+
+  function addPlayer() {
+    var list = $("#invites-list");
+    var card = document.createElement("div");
+    card.className = "invite-card";
+    card.setAttribute("data-state", "generating");
+    var slot = list.querySelectorAll(".invite-card").length + 2;
+
+    card.innerHTML =
+      '<div class="invite-head">' +
+        '<span class="slot-title">Player ' + slot + '</span>' +
+        '<span class="invite-badge">Generating…</span>' +
+        '<button class="btn btn-ghost remove-invite" title="Remove">✕</button>' +
+      '</div>' +
+      '<div class="invite-label">Invite — send this to the player</div>' +
+      '<textarea class="blob invite-box" rows="3" readonly></textarea>' +
+      '<button class="btn btn-primary copy-invite" disabled>Copy invite</button>' +
+      '<div class="invite-label">Answer — paste their reply here</div>' +
+      '<textarea class="blob answer-box" rows="3" placeholder="Paste their answer…"></textarea>' +
+      '<div class="invite-actions">' +
+        '<button class="btn btn-primary connect-btn">Connect</button>' +
+      '</div>' +
+      '<div class="invite-status"></div>';
+
+    list.appendChild(card);
+
+    var inviteBox = card.querySelector(".invite-box");
+    var answerBox = card.querySelector(".answer-box");
+    var statusEl = card.querySelector(".invite-status");
+    var badgeEl = card.querySelector(".invite-head .invite-badge");
+    var copyBtn = card.querySelector(".copy-invite");
+    var connectBtn = card.querySelector(".connect-btn");
+    var removeBtn = card.querySelector(".remove-invite");
+
+    var inviteId = null;
+
+    function setState(name) { card.setAttribute("data-state", name); }
+    function setStatus(text, cls) {
+      statusEl.textContent = text;
+      statusEl.className = "invite-status" + (cls ? " " + cls : "");
+    }
+    function setBadge(text, cls) {
+      badgeEl.textContent = text;
+      badgeEl.className = "invite-badge" + (cls ? " " + cls : "");
+    }
+
+    copyBtn.addEventListener("click", function () {
+      if (!inviteBox.value) return;
+      copyText(inviteBox.value, "Invite copied. Send it to a player.");
+      copyBtn.textContent = "Copied ✓";
+      setTimeout(function () { copyBtn.textContent = "Copy invite"; }, 2000);
+    });
+
+    function doConnect(answer) {
+      if (!inviteId) return;
+      connectBtn.disabled = true;
+      setState("connecting");
+      setBadge("Connecting…");
+      setStatus("Connecting…");
+      BUNGO.Net.acceptAnswer(inviteId, answer).then(function () {
+        setStatus("Accepted — waiting for the data channel…");
+      }).catch(function (e) {
+        connectBtn.disabled = false;
+        setState("ready");
+        setBadge("Ready");
+        setStatus(e && e.message ? e.message : "Could not connect.", "err");
+      });
+    }
+
+    connectBtn.addEventListener("click", function () {
+      var answer = answerBox.value.trim();
+      if (!answer) { setStatus("Paste the player's answer first.", "err"); return; }
+      doConnect(answer);
+    });
+
+    removeBtn.addEventListener("click", function () {
+      if (inviteId) { delete inviteCards[inviteId]; BUNGO.Net.discardInvite(inviteId); }
+      card.remove();
+      updateAddPlayerState();
+    });
+
+    BUNGO.Net.createInvite().then(function (res) {
+      inviteId = res.id;
+      inviteCards[res.id] = card;
+      inviteBox.value = res.invite;
+      copyBtn.disabled = false;
+      setState("ready");
+      setBadge("Ready");
+      setStatus("Copy the invite, send it, then paste their answer back.");
+    }).catch(function (e) {
+      setState("error");
+      setBadge("Error", "err");
+      setStatus(e && e.message ? e.message : "Could not create invite.", "err");
+    });
+  }
+
+  function updateAddPlayerState() {
+    var count = BUNGO.Net.state ? BUNGO.Net.state.players.length : 0;
+    $("#btn-add-player").disabled = count >= BUNGO.MAX_PLAYERS;
+    $("#players-count").textContent = count + " / " + BUNGO.MAX_PLAYERS + " in room";
+    $("#btn-invite").textContent = "Invite players (" + count + "/" + BUNGO.MAX_PLAYERS + ")";
+    renderRoster();
+  }
+
+  function renderRoster() {
+    var el = $("#players-roster");
+    var state = BUNGO.Net.state;
+    if (!el || !state) return;
+    el.innerHTML = "";
+    state.players.forEach(function (p) {
+      var row = document.createElement("div");
+      row.className = "roster-row";
+
+      var dot = document.createElement("i");
+      dot.className = "dot";
+      dot.style.background = p.color.hex;
+
+      var name = document.createElement("span");
+      name.className = "roster-name";
+      name.textContent = p.name;
+
+      var role = document.createElement("span");
+      role.className = "roster-role";
+      role.textContent = p.isHost ? "host" : "";
+
+      row.appendChild(dot);
+      row.appendChild(name);
+      row.appendChild(role);
+      el.appendChild(row);
+    });
+  }
+
   // ---------- Callbacks from the network layer ----------
   function makeCallbacks(isHost) {
     return {
       onReady: function (info) {
-        resetButtons();
         myPlayerId = info.youId;
         $("#btn-new-round").classList.toggle("hidden", !isHost);
+        $("#btn-invite").classList.toggle("hidden", !isHost);
+        closeInviteModal();
         show(roomScreen);
         render(info.state);
       },
+      onAnswerReady: function (answerStr) {
+        $("#answer-box").value = answerStr;
+        $("#btn-copy-answer").disabled = false;
+        $("#answer-status").textContent = "Copy this answer and send it back to the host. Waiting for them to accept…";
+      },
       onWelcome: function (state, youId) {
-        resetButtons();
         myPlayerId = youId;
         $("#btn-new-round").classList.add("hidden");
+        $("#btn-invite").classList.add("hidden");
         show(roomScreen);
         render(state);
       },
       onState: function (state) {
         render(state);
       },
+      onInviteConnected: function (id, player) {
+        var card = inviteCards[id];
+        if (card) { card.remove(); delete inviteCards[id]; }
+        updateAddPlayerState();
+      },
       onError: function (msg) {
-        resetButtons();
         showToast(msg, true);
+        if (!answerScreen.classList.contains("hidden")) {
+          $("#answer-status").textContent = msg;
+          $("#answer-status").className = "invite-status err";
+        }
       },
       onRoomClosed: function () {
-        resetButtons();
         showToast("The host closed the room.", true);
         BUNGO.Net.leave();
         myPlayerId = null;
@@ -129,10 +303,11 @@
   // ---------- Rendering ----------
   function render(state) {
     $("#room-game-name").textContent = state.gameName;
-    $("#room-code").textContent = state.code;
+    roomScreen.classList.toggle("has-winner", !!state.winner);
     renderPlayers(state.players);
     renderStatus(state.winner);
     renderBoard(state);
+    updateAddPlayerState();
   }
 
   function renderPlayers(players) {
@@ -148,9 +323,7 @@
       chip.appendChild(dot);
 
       var label = document.createElement("span");
-      label.textContent = p.name +
-        (p.isHost ? " · host" : "") +
-        (p.id === myPlayerId ? " · you" : "");
+      label.textContent = p.name;
       chip.appendChild(label);
 
       el.appendChild(chip);
@@ -169,8 +342,6 @@
         b.style.borderColor = winner.color.hex;
       }
       el.appendChild(b);
-    } else {
-      el.textContent = "First to a complete line wins!";
     }
   }
 
@@ -250,9 +421,6 @@
 
   // ---------- Boot ----------
   async function init() {
-    if (typeof Peer === "undefined") {
-      showToast("Could not load the networking library (needs internet).", true);
-    }
     try {
       await BUNGO.loadGames();
       var sel = $("#game-select");

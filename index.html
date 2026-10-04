@@ -12,7 +12,7 @@
     <section id="home-screen" class="screen">
       <header class="hero">
         <h1>Bungo</h1>
-        <p>Play bingo while you game. Create a room, share the code, and race your friends to a line — peer to peer.</p>
+        <p>Play bingo while you game.</p>
       </header>
 
       <div class="home-actions">
@@ -48,11 +48,27 @@
           <input id="join-name" type="text" maxlength="16" placeholder="Player" />
         </label>
         <label class="field">
-          <span>Room code</span>
-          <input id="join-code" type="text" maxlength="4" placeholder="ABCD" spellcheck="false"
-                 autocomplete="off" autocapitalize="characters" />
+          <span>Join invite (from the host)</span>
+          <textarea id="join-invite" class="blob" rows="3" placeholder="Paste the invite the host sent you…"></textarea>
         </label>
         <button id="btn-join" class="btn btn-primary btn-block">Join room</button>
+      </div>
+    </section>
+
+    <!-- ============ ANSWER (joiner) ============ -->
+    <section id="answer-screen" class="screen hidden">
+      <div class="panel panel-wide">
+        <h2>Send your answer back</h2>
+        <p class="hint">Copy this answer and send it back to the host. The room opens automatically once they paste it.</p>
+        <label class="field">
+          <span>Your answer</span>
+          <textarea id="answer-box" class="blob" rows="6" readonly></textarea>
+        </label>
+        <div id="answer-status" class="invite-status">Preparing your answer…</div>
+        <div class="row">
+          <button id="btn-copy-answer" class="btn btn-primary" disabled>Copy answer</button>
+          <button id="btn-answer-back" class="btn btn-secondary">Cancel</button>
+        </div>
       </div>
     </section>
 
@@ -61,32 +77,43 @@
       <header class="room-header">
         <div class="room-title">
           <h2 id="room-game-name">Game</h2>
-          <div class="room-code-row">
-            <span class="room-code-label">Room code</span>
-            <span id="room-code" class="room-code">----</span>
-            <button id="btn-copy-code" class="btn btn-ghost">Copy</button>
-          </div>
         </div>
         <div class="room-actions">
+          <button id="btn-invite" class="btn btn-secondary hidden">Invite players</button>
           <button id="btn-new-round" class="btn btn-secondary hidden">New round</button>
           <button id="btn-leave" class="btn btn-danger">Leave</button>
         </div>
       </header>
 
-      <div id="players-bar" class="players-bar"></div>
       <div id="status-bar" class="status-bar"></div>
 
       <div id="board-scroll">
         <div id="board" class="board"></div>
       </div>
 
-      <p class="help">Click a task to place (or remove) your token. Get a full row, column, or diagonal to win — the center FREE counts for everyone.</p>
+      <div id="players-bar" class="players-bar"></div>
+
+      <div id="invite-modal" class="modal hidden">
+        <div id="invite-backdrop" class="modal-backdrop"></div>
+        <div class="modal-dialog">
+          <div class="modal-head">
+            <h3>Invite players</h3>
+            <span id="players-count" class="players-count">1 / 9 in room</span>
+            <button id="btn-close-invite" class="btn btn-ghost modal-close" title="Close">✕</button>
+          </div>
+          <div class="roster-title">Players in room</div>
+          <div id="players-roster" class="players-roster"></div>
+          <p class="hint">Each player needs their own invite: copy it, send it to them, then paste their answer back here.</p>
+          <div id="invites-list"></div>
+          <button id="btn-add-player" class="btn btn-secondary">＋ Add player</button>
+        </div>
+      </div>
+
     </section>
   </div>
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script src="js/config.js"></script>
   <script src="js/game-data.js"></script>
   <script src="js/game.js"></script>

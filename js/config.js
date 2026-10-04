@@ -1,16 +1,10 @@
-// Global configuration for Bungo Bingo.
+// Global configuration for Bungo.
 window.BUNGO = window.BUNGO || {};
-
-// PeerJS room IDs are prefixed so they never collide with other PeerJS apps.
-BUNGO.ROOM_PREFIX = "bungo-";
 
 // 1 host + up to 8 players who join.
 BUNGO.MAX_PLAYERS = 9;
 
-// Unambiguous alphanumerics (no I, O, 0, 1) so codes are easy to read aloud.
-BUNGO.CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-// Unique color tokens, one per player. The host always gets index 0.
+// Unique color tokens, one per player. Each player gets a random unused color.
 BUNGO.COLORS = [
   { name: "Red",     hex: "#e63946" },
   { name: "Orange",  hex: "#f4a261" },
