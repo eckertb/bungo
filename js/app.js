@@ -47,6 +47,13 @@
     }
   }
 
+  function readClipboard() {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      return navigator.clipboard.readText().catch(function () { return null; });
+    }
+    return Promise.resolve(null);
+  }
+
   // ---------- Home screen ----------
   $("#btn-show-create").addEventListener("click", function () {
     $("#create-panel").classList.toggle("hidden");
@@ -112,48 +119,113 @@
     var list = $("#invites-list");
     var card = document.createElement("div");
     card.className = "invite-card";
+    card.setAttribute("data-state", "generating");
+    var slot = list.querySelectorAll(".invite-card").length + 2;
+
     card.innerHTML =
-      '<button class="btn btn-ghost remove-invite">✕</button>' +
-      '<span class="label">Invite (send to a player)</span>' +
-      '<textarea class="blob invite-box" rows="3" readonly></textarea>' +
-      '<div class="invite-actions"><button class="btn btn-ghost copy-invite">Copy invite</button></div>' +
-      '<span class="label">Answer (paste from that player)</span>' +
-      '<textarea class="blob answer-box" rows="3" placeholder="Paste their answer…"></textarea>' +
-      '<div class="invite-actions"><button class="btn btn-primary connect-btn">Connect</button></div>' +
-      '<div class="invite-status">Generating invite…</div>';
+      '<div class="invite-head">' +
+        '<span class="slot-title">Player ' + slot + '</span>' +
+        '<span class="invite-badge">Generating…</span>' +
+        '<button class="btn btn-ghost remove-invite" title="Remove">✕</button>' +
+      '</div>' +
+      '<div class="invite-body">' +
+        '<div class="invite-step">' +
+          '<div class="invite-step-head"><span class="step-num">1</span><span>Send the invite</span></div>' +
+          '<div class="invite-actions">' +
+            '<button class="btn btn-primary copy-invite" disabled>Copy invite</button>' +
+            '<button class="btn btn-ghost toggle-code">show code</button>' +
+          '</div>' +
+          '<textarea class="blob invite-box hidden" rows="2" readonly></textarea>' +
+        '</div>' +
+        '<div class="invite-step">' +
+          '<div class="invite-step-head"><span class="step-num">2</span><span>Receive their answer</span></div>' +
+          '<div class="invite-actions">' +
+            '<button class="btn btn-secondary paste-answer" disabled>Paste their answer</button>' +
+          '</div>' +
+          '<div class="manual-answer hidden">' +
+            '<textarea class="blob answer-box" rows="2" placeholder="Paste their answer here…"></textarea>' +
+            '<button class="btn btn-primary connect-btn">Connect</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="invite-connected hidden">' +
+        '<i class="dot"></i><span class="connected-name"></span><span class="invite-badge ok">Connected ✓</span>' +
+      '</div>' +
+      '<div class="invite-status"></div>';
+
     list.appendChild(card);
 
     var inviteBox = card.querySelector(".invite-box");
     var answerBox = card.querySelector(".answer-box");
     var statusEl = card.querySelector(".invite-status");
+    var badgeEl = card.querySelector(".invite-head .invite-badge");
     var copyBtn = card.querySelector(".copy-invite");
+    var pasteBtn = card.querySelector(".paste-answer");
+    var toggleCodeBtn = card.querySelector(".toggle-code");
     var connectBtn = card.querySelector(".connect-btn");
     var removeBtn = card.querySelector(".remove-invite");
+    var manualAnswer = card.querySelector(".manual-answer");
+    var bodyEl = card.querySelector(".invite-body");
+    var connectedEl = card.querySelector(".invite-connected");
 
     var inviteId = null;
     var connected = false;
 
+    function setState(name) { card.setAttribute("data-state", name); }
     function setStatus(text, cls) {
       statusEl.textContent = text;
       statusEl.className = "invite-status" + (cls ? " " + cls : "");
     }
+    function setBadge(text, cls) {
+      badgeEl.textContent = text;
+      badgeEl.className = "invite-badge" + (cls ? " " + cls : "");
+    }
 
     copyBtn.addEventListener("click", function () {
-      if (inviteBox.value) copyText(inviteBox.value, "Invite copied. Send it to a player.");
+      if (!inviteBox.value) return;
+      copyText(inviteBox.value, "Invite copied. Send it to a player.");
+      copyBtn.textContent = "Copied ✓";
+      setTimeout(function () { copyBtn.textContent = "Copy invite"; }, 2000);
     });
 
-    connectBtn.addEventListener("click", function () {
+    toggleCodeBtn.addEventListener("click", function () {
+      inviteBox.classList.toggle("hidden");
+      toggleCodeBtn.textContent = inviteBox.classList.contains("hidden") ? "show code" : "hide code";
+    });
+
+    pasteBtn.addEventListener("click", function () {
+      readClipboard().then(function (text) {
+        text = (text || "").trim();
+        if (text) {
+          doConnect(text);
+        } else {
+          manualAnswer.classList.remove("hidden");
+          pasteBtn.classList.add("hidden");
+          setStatus("Paste their answer below, then press Connect.");
+        }
+      });
+    });
+
+    function doConnect(answer) {
       if (!inviteId || connected) return;
-      var answer = answerBox.value.trim();
-      if (!answer) { setStatus("Paste the player's answer first.", "err"); return; }
       connectBtn.disabled = true;
+      setState("connecting");
+      setBadge("Connecting…");
       setStatus("Connecting…");
       BUNGO.Net.acceptAnswer(inviteId, answer).then(function () {
         setStatus("Accepted — waiting for the data channel…");
       }).catch(function (e) {
         connectBtn.disabled = false;
+        setState("ready");
+        setBadge("Ready");
         setStatus(e && e.message ? e.message : "Could not connect.", "err");
       });
+    }
+
+    connectBtn.addEventListener("click", function () {
+      var answer = answerBox.value.trim();
+      if (!answer) { setStatus("Paste the player's answer first.", "err"); return; }
+      doConnect(answer);
     });
 
     removeBtn.addEventListener("click", function () {
@@ -162,20 +234,30 @@
       updateAddPlayerState();
     });
 
-    card._markConnected = function () {
+    card._markConnected = function (player) {
       connected = true;
-      setStatus("Connected ✓", "ok");
-      connectBtn.disabled = true;
-      answerBox.disabled = true;
-      copyBtn.disabled = true;
+      setState("connected");
+      setBadge("Connected ✓", "ok");
+      bodyEl.classList.add("hidden");
+      connectedEl.classList.remove("hidden");
+      var dot = connectedEl.querySelector(".dot");
+      if (player && player.color) dot.style.background = player.color.hex;
+      connectedEl.querySelector(".connected-name").textContent = player ? player.name : "Player";
+      setStatus("");
     };
 
     BUNGO.Net.createInvite().then(function (res) {
       inviteId = res.id;
       inviteCards[res.id] = card;
       inviteBox.value = res.invite;
-      setStatus("Send this invite to a player, then paste their answer above.");
+      copyBtn.disabled = false;
+      pasteBtn.disabled = false;
+      setState("ready");
+      setBadge("Ready");
+      setStatus("Copy the invite, send it, then paste their answer back.");
     }).catch(function (e) {
+      setState("error");
+      setBadge("Error", "err");
       setStatus(e && e.message ? e.message : "Could not create invite.", "err");
     });
   }
@@ -183,6 +265,7 @@
   function updateAddPlayerState() {
     var count = BUNGO.Net.state ? BUNGO.Net.state.players.length : 0;
     $("#btn-add-player").disabled = count >= BUNGO.MAX_PLAYERS;
+    $("#players-count").textContent = count + " / " + BUNGO.MAX_PLAYERS + " in room";
   }
 
   // ---------- Callbacks from the network layer ----------
@@ -212,9 +295,9 @@
       onState: function (state) {
         render(state);
       },
-      onInviteConnected: function (id) {
+      onInviteConnected: function (id, player) {
         var card = inviteCards[id];
-        if (card && card._markConnected) card._markConnected();
+        if (card && card._markConnected) card._markConnected(player);
         updateAddPlayerState();
       },
       onError: function (msg) {

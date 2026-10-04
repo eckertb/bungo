@@ -194,12 +194,13 @@
     invite.resolved = true;
     var playerId = makePlayerId();
     invite.playerId = playerId;
-    Net.state.players.push({ id: playerId, name: "Player", color: color, isHost: false, connected: true });
+    var player = { id: playerId, name: "Player", color: color, isHost: false, connected: true };
+    Net.state.players.push(player);
     Net.conns.set(playerId, invite.channel);
 
     send(invite.channel, { type: "welcome", youId: playerId, state: Net.state });
     Net.sync();
-    if (Net.callbacks && Net.callbacks.onInviteConnected) Net.callbacks.onInviteConnected(invite.id);
+    if (Net.callbacks && Net.callbacks.onInviteConnected) Net.callbacks.onInviteConnected(invite.id, player);
   };
 
   Net.onData = function (playerId, data) {
