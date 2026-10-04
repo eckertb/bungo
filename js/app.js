@@ -186,7 +186,6 @@
       var div = document.createElement("button");
       div.type = "button";
       div.className = "cell";
-      div.title = cell.free ? "FREE space" : cell.task;
 
       var marks = state.marks[cell.index] || [];
       if (marks.indexOf(myPlayerId) >= 0) div.classList.add("mine");
@@ -197,6 +196,7 @@
 
       if (cell.free) {
         div.classList.add("free");
+        div.title = "FREE space";
         var label = document.createElement("span");
         label.className = "free-label";
         label.innerHTML = "★<br>FREE";
@@ -206,20 +206,7 @@
         task.className = "task";
         task.textContent = cell.task;
         div.appendChild(task);
-
-        if (marks.length) {
-          var tokens = document.createElement("span");
-          tokens.className = "tokens";
-          marks.forEach(function (pid) {
-            var p = state.players.find(function (x) { return x.id === pid; });
-            var dot = document.createElement("i");
-            dot.className = "token";
-            if (p) dot.style.background = p.color.hex;
-            dot.title = p ? p.name : "";
-            tokens.appendChild(dot);
-          });
-          div.appendChild(tokens);
-        }
+        applyMarkColor(div, marks, state.players, cell.task);
       }
 
       div.addEventListener("click", function () {
@@ -229,6 +216,36 @@
 
       boardEl.appendChild(div);
     });
+  }
+
+  // Colors a cell's background with the color(s) of the players who marked it.
+  // A single player fills the cell; several players split it into equal segments.
+  function applyMarkColor(div, marks, players, taskText) {
+    if (!marks.length) return;
+    var colors = [];
+    var names = [];
+    marks.forEach(function (pid) {
+      var p = players.find(function (x) { return x.id === pid; });
+      if (p) {
+        colors.push(p.color.hex);
+        names.push(p.name);
+      }
+    });
+    if (!colors.length) return;
+
+    div.title = taskText + " — " + names.join(", ");
+
+    // Semi-transparent black overlay keeps the white text readable on any color.
+    var dark = "linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4))";
+    if (colors.length === 1) {
+      div.style.background = dark + ", " + colors[0];
+    } else {
+      var step = 100 / colors.length;
+      var stops = colors.map(function (c, i) {
+        return c + " " + (i * step).toFixed(2) + "% " + ((i + 1) * step).toFixed(2) + "%";
+      });
+      div.style.background = dark + ", conic-gradient(" + stops.join(", ") + ")";
+    }
   }
 
   // ---------- Boot ----------
