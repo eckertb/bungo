@@ -170,8 +170,13 @@ body {
 /* ---------- Manual WebRTC invite cards / answer screen ---------- */
 .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 12px; }
 .players-count { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
-.invite-card { position: relative; border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 12px 0; background: var(--bg2); transition: opacity 0.2s ease, border-color 0.2s ease; }
-.invite-card[data-state="connected"] { border-color: #2a9d8f; background: rgba(42, 157, 143, 0.08); }
+.roster-title { color: var(--muted); font-size: 0.8rem; margin: 10px 0 6px; }
+.players-roster { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.roster-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); }
+.roster-row .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.5); }
+.roster-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster-role { color: var(--muted); font-size: 0.78rem; }
+.invite-card { position: relative; border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 12px 0; background: var(--bg2); }
 
 .invite-head { display: flex; align-items: center; gap: 8px; padding-right: 40px; }
 .slot-title { font-weight: 700; font-size: 0.95rem; }
@@ -179,31 +184,20 @@ body {
 .invite-badge.ok { color: #2a9d8f; border-color: #2a9d8f; background: rgba(42, 157, 143, 0.12); }
 .invite-badge.err { color: var(--danger); border-color: var(--danger); background: rgba(239, 71, 111, 0.1); }
 
-.invite-body { margin-top: 4px; }
-.invite-step { margin-top: 12px; }
-.invite-step-head { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.82rem; margin-bottom: 6px; }
-.step-num {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; border-radius: 50%;
-  background: var(--accent); color: #fff; font-size: 0.7rem; font-weight: 700;
-}
+.invite-label { color: var(--muted); font-size: 0.8rem; margin: 10px 0 4px; }
 
 .invite-card textarea {
   width: 100%; min-height: 44px; padding: 8px 10px; resize: vertical; border-radius: 8px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
   font-family: Consolas, "Courier New", monospace; font-size: 0.72rem;
-  word-break: break-all; white-space: pre-wrap; margin-top: 8px;
+  word-break: break-all; white-space: pre-wrap;
 }
-.manual-answer .btn { margin-top: 8px; }
+.invite-card .copy-invite { margin-top: 8px; }
 
-.invite-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.invite-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
 .invite-status { font-size: 0.85rem; color: var(--muted); margin-top: 8px; min-height: 1em; }
 .invite-status.ok { color: #2a9d8f; }
 .invite-status.err { color: var(--danger); }
-
-.invite-connected { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
-.invite-connected .dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; border: 1px solid rgba(255, 255, 255, 0.5); }
-.connected-name { font-weight: 600; }
 
 .remove-invite { position: absolute; top: 10px; right: 10px; font-size: 0.8rem; padding: 5px 9px; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
